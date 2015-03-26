@@ -5,6 +5,8 @@ from joint_dependency.inference import (same_segment, likelihood_dependent,
                                         likelihood_independent)
 
 
+parametrize_n = pytest.mark.parametrize("n", [100, 1000, 10000])
+
 @pytest.fixture
 def belief_2d():
     belief = JointDependencyBelief([12, 14], [[], []])
@@ -39,7 +41,7 @@ def test_experiences(belief_2d):
     assert (belief_2d.posteriors[1] == np.array([.5, 0., .5])).all()
 
 
-@pytest.mark.parametrize("n", [100, 1000, 10000])
+@parametrize_n
 def test_sample_lock(belief_2d, n):
     np.random.seed()
     result = {True: 0, False: 0}
@@ -47,6 +49,18 @@ def test_sample_lock(belief_2d, n):
         result[belief_2d.sample_locking([12, 53])[0]] += 1
 
     assert (0.5 * n - (3 * n / np.sqrt(n)) < result[True]
+            < 0.5 * n + (3 * n / np.sqrt(n)))
+
+
+@parametrize_n
+def test_simulate(belief_2d, n):
+    np.random.seed()
+    result = {0: 0, 1: 0}
+    for _ in range(n):
+        experience = belief_2d.simulate(np.array([12, 20]), 0)
+        result[experience["value"]] += 1
+
+    assert (0.5 * n - (3 * n / np.sqrt(n)) < result[0]
             < 0.5 * n + (3 * n / np.sqrt(n)))
 
 

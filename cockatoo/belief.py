@@ -2,15 +2,6 @@ from joint_dependency.inference import (model_posterior, prob_locked)
 import numpy as np
 
 
-def calc_once(f):
-    def wrapper(*args, **kwargs):
-        if wrapper.result is None:
-            wrapper.result = f(*args, **kwargs)
-        return wrapper.result
-    wrapper.result = None
-    return wrapper
-
-
 class JointDependencyBelief(object):
     def __init__(self, pos, experiences):
         self.experiences = experiences

@@ -1,4 +1,5 @@
 from enum import Enum
+from copy import deepcopy
 import numpy as np
 from joint_dependency.inference import exp_neg_entropy
 
@@ -11,19 +12,20 @@ class JointDependencyAction(Enum):
 
 
 class JointDependencyState(object):
-    def __init__(self, belief, simulator):
-        self.performed = {JointDependencyAction.exploit: False,
-                          JointDependencyAction.explore: False}
+    def __init__(self, belief):
+        self.performed = {}
         self.belief = belief
-        self.simulator = simulator
         self.objective_fnc = exp_neg_entropy
 
     def perform(self, action):
         sim_action = self._get_best_action(action)
-        belief_sample = self.belief.sample()
-        sim_state = self.simulator.perform(belief_sample, sim_action)
-        belief = JointDependencyBelief(sim_state)
-        return JointDependencyState(belief, self.simulator)
+        experience = self.belief.simulate(sim_action)
+
+        experiences = deepcopy(self.belief.experiences)
+        experiences.append(experience)
+
+        belief = JointDependencyBelief(experiences)
+        return JointDependencyState(belief)
 
     def _get_best_action(self, action):
         if action == JointDependencyAction.explore:
@@ -36,11 +38,14 @@ class JointDependencyState(object):
         _max = - np.inf
         max_joint = None
         for i in range(self.N_samples):
-            pos = np.ndarray((len(self.simulator.world.joints),))
-            for j, joint in enumerate(self.simulator.world.joints):
-                if self.belief.locked_states[j] == 1:
-                    pos[j] = int(joint.get_q())
-                else:
+            pos = self.belief.pos
+
+            segments, dependency = self.belief.sample()
+            locked = self.belief.sample_locking(self.belief.pos, segments,
+                                                dependency)
+
+            for j, joint in enumerate(self.belief.pos):
+                if not locked[j]:
                     pos[j] = np.random.randint(joint.min_limit,
                                                joint.max_limit)
 
@@ -61,6 +66,6 @@ class JointDependencyState(object):
         pass
 
     def reward(self):
-        # compute exp_neg_entropy
+        # TODO: compute exp_neg_entropy
         pass
 

@@ -14,7 +14,7 @@ def calc_once(f):
 class JointDependencyBelief(object):
     def __init__(self, pos, experiences):
         self.experiences = experiences
-        self.pos = pos
+        self.pos = np.asarray(pos)
 
         self.p_same = [[], []]
         self.p_dependencies = [[], []]
@@ -23,10 +23,7 @@ class JointDependencyBelief(object):
         self.alpha_prior = 0
         self.model_prior = [0]
 
-        self._posteriors = None
-
     @property
-    @calc_once
     def posteriors(self):
         posteriors = []
         for i, _ in enumerate(self.pos):
@@ -36,11 +33,14 @@ class JointDependencyBelief(object):
         return posteriors
 
     def sample_locking(self, pos):
+        pos = np.asarray(pos)
         locking = np.ndarray(pos.shape, dtype=np.bool)
         for joint_idx, joint_exps in enumerate(self.experiences):
             pl = prob_locked(joint_exps, pos, self.p_same, self.alpha_prior,
                              None, self.posteriors[joint_idx])
-            locking[joint_idx] = np.random.uniform() < pl
+            # pl is a dirichlet distribution object. Draw a sample and sample
+            # from that
+            locking[joint_idx] = np.random.uniform() < pl.rvs()[0][0]
         return locking
 
     def simulate(self, action, sim_joint):

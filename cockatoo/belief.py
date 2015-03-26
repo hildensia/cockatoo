@@ -50,7 +50,7 @@ class JointDependencyBelief(object):
 
         for joint, pos in enumerate(action):
             if not locking[joint]:
-                new_pos = pos
+                new_pos[joint] = pos
 
         locking = self.sample_locking(new_pos)
         return {"data": new_pos, "value": locking[sim_joint]}

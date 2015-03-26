@@ -64,3 +64,11 @@ def test_simulate(belief_2d, n):
             < 0.5 * n + (3 * n / np.sqrt(n)))
 
 
+def test_sample_joint_states(belief_2d):
+    samples = belief_2d.sample_joint_states(100)
+    assert len(samples) == 100
+    for pos, joint in samples:
+        assert 0 <= pos[0] <= 180
+        assert 0 <= pos[1] <= 180
+        assert 0 <= joint <= 1
+

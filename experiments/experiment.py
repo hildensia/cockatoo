@@ -55,8 +55,8 @@ def main():
 
     belief.alpha_prior = np.array([.1, .1])
 
-    p_cp = np.array([.01] * 360)
-    p_cp[160] = .99
+    p_cp = np.array([.1] * 360)
+    p_cp[160] = .9
 
     belief.p_same = [same_segment(p_cp)] * n
 

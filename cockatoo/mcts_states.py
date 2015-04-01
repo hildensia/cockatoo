@@ -64,7 +64,9 @@ class JointDependencyState(object):
         print(experiences)
 
         print("LOCKING: {}".format(self.locking))
-        print("ACTION: {}".format(self.performed[action]))
+        print("ACTION: {} joint {} ({})".format(action.type.name,
+                                                action.joint_idx,
+                                                self._get_best_action(action)))
         self.simulator.action_machine.run_action(self.performed[action])
 
         q = [joint.get_q() for joint in self.simulator.world.joints]
@@ -87,30 +89,23 @@ class JointDependencyState(object):
                     deepcopy(self.belief.get_best_explore_action(self.locking))
             elif action.type == JointDependencyActionType.unlock:
                 self.performed[action] = \
-                    deepcopy(self.belief.get_best_unlock_action(self.n_samples,
-                                                                action.joint_idx,
+                    deepcopy(self.belief.get_best_unlock_action(action.joint_idx,
                                                                 self.locking))
             elif action.type == JointDependencyActionType.lock:
                 self.performed[action] = \
-                    deepcopy(self.belief.get_best_lock_action(self.n_samples,
-                                                              action.joint_idx,
+                    deepcopy(self.belief.get_best_lock_action(action.joint_idx,
                                                               self.locking))
             return self.performed[action]
 
     def reward(self, parent, _):
-        open = 0
-        # estimate the probability of all open
-        # (TODO: can we do it bayesian?)
-        # pl = self.belief.prob_locking(self.belief.pos)
-        # for _ in range(n):
-        #     locking = np.random.uniform() < pl[4].rvs()[0][0]
-        #     if not locking:
-        #         open += 1
-        # reward = 100 * (open/n)
-        reward = sum(entropy(np.array(parent.belief.posteriors).T,
-                             np.array(self.belief.posteriors).T))
-        print(".", end="")
-        return 0
+        if not self.locking[4]:
+            print("g")
+            reward = 100
+        else:
+            reward = -1
+
+        # reward += sum(entropy(np.array(parent.belief.posteriors).T,
+        #                      np.array(self.belief.posteriors).T))
         return reward
 
     def is_terminal(self):

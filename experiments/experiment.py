@@ -19,8 +19,6 @@ import argparse
 import multiprocessing
 from functools import partial
 
-import matplotlib.pyplot as plt
-
 
 class Simulator(object):
     def __init__(self, noise):

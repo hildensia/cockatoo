@@ -137,22 +137,20 @@ class JointDependencyBelief(object):
             j = np.random.choice(np.where(-np.array(locking))[0])
             pos[j] = np.random.randint(0, 180)
 
-            # p_same = np.prod([self.p_same[k][self.pos[k]][pos[k]]
-            #                   for k in range(pos.shape[0])])
+            p_same = np.prod([self.p_same[k][self.pos[k]][pos[k]]
+                              for k in range(pos.shape[0])])
 
-            # if np.random.uniform() > p_same:
-            #     samples.append(pos)
-            # elif np.random.uniform() > 0.95:
-            samples.append(pos)
-            #print("N: {}, i: {}".format(n, i))
-            # else:
-            #     # print(pos, p_same)
-            #     i -= 1
+            if np.random.uniform() > p_same:
+                samples.append(pos)
+            elif np.random.uniform() > 0.95:
+                samples.append(pos)
+            else:
+                i -= 1
 
         return samples
 
     def _optimize(self, key, locking, verbose=0):
         n = np.where(-np.array(locking))[0].shape[0]
         #print("n = {}".format(n))
-        samples = self._sample_unlocked(n*180, locking)
+        samples = self._sample_unlocked(n*90, locking)
         return rand_max(samples, key=key)

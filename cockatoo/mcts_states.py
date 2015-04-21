@@ -35,7 +35,8 @@ class JointDependencyAction(object):
 
 
 class JointDependencyState(object):
-    def __init__(self, belief, locking, simulator):
+    def __init__(self, belief, locking, simulator, options):
+        self.options = options
         self.performed = {}
         self.belief = belief
         self.locking = locking
@@ -57,7 +58,8 @@ class JointDependencyState(object):
             experiences[idx].append({"data": new_pos, "value": 1 if l else 0})
 
         belief = JointDependencyBelief(new_pos, experiences, self.belief)
-        return JointDependencyState(belief, locking, self.simulator)
+        return JointDependencyState(belief, locking, self.simulator,
+                                    self.options)
 
     def real_world_perform(self, action):
         experiences = deepcopy(self.belief.experiences)
@@ -78,7 +80,8 @@ class JointDependencyState(object):
 
         belief = JointDependencyBelief(q, experiences,
                                        self.belief)
-        return JointDependencyState(belief, locking, self.simulator)
+        return JointDependencyState(belief, locking, self.simulator,
+                                    self.options)
 
     def _get_best_action(self, action):
         try:
@@ -98,14 +101,16 @@ class JointDependencyState(object):
             return self.performed[action]
 
     def reward(self, parent, _):
-        if not self.locking[4]:
+        reward = -1
+
+        if self.options.goal_reward and not self.locking[4]:
             print("g")
             reward = 100
-        else:
-            reward = -1
 
-        # reward += sum(entropy(np.array(parent.belief.posteriors).T,
-        #                      np.array(self.belief.posteriors).T))
+        if self.options.intrinsic_motivation:
+            reward += sum(entropy(np.array(parent.belief.posteriors).T,
+                                  np.array(self.belief.posteriors).T))
+
         return reward
 
     def is_terminal(self):

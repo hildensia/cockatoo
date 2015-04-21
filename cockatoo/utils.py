@@ -30,6 +30,26 @@ def rand_max(iterable, key=None):
     return random.choice(max_l)
 
 
+def rand_max_kv(iterable):
+    """
+    A max function that tie breaks randomly instead of first-wins as in
+    built-in max().
+    :param iterable: The container to take the max from
+    """
+
+    max_v = -np.inf
+    max_l = []
+
+    for item, value in iterable:
+        if value == max_v:
+            max_l.append(item)
+        elif value > max_v:
+            max_l = [item]
+            max_v = value
+
+    return random.choice(max_l)
+
+
 def nan_helper(y):
     """Helper to handle indices and logical indices of NaNs.
 

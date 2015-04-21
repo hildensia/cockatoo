@@ -1,12 +1,48 @@
 from joint_dependency.inference import (model_posterior, prob_locked,
                                         exp_cross_entropy)
 import numpy as np
-from .utils import rand_max
+from .utils import rand_max, rand_max_kv
 from scipy.optimize import minimize
+
+from multiprocessing import Pool
 
 
 def ass_bool(obj):
     assert isinstance(obj, bool) or isinstance(obj, np.bool_)
+
+
+def _get_best_explore_action(tup):
+    belief = tup[0]
+    pos = tup[1]
+    return np.sum([exp_cross_entropy(belief.experiences[joint],
+                                     pos,
+                                     belief.p_same,
+                                     belief.alpha_prior,
+                                     belief.model_prior[joint],
+                                     model_post=belief.posteriors[joint])
+                   for joint in range(belief.pos.shape[0])])
+
+
+def _get_best_lock_action(tup):
+    belief = tup[0]
+    joint = tup[1]
+    pos = tup[2]
+    return ((prob_locked(belief.experiences[joint],
+                         pos,
+                         belief.p_same,
+                         belief.alpha_prior,
+                         belief.model_prior[joint])).mean())[0]
+
+
+def _get_best_unlock_action(tup):
+    belief = tup[0]
+    joint = tup[1]
+    pos = tup[2]
+    return ((prob_locked(belief.experiences[joint],
+                         pos,
+                         belief.p_same,
+                         belief.alpha_prior,
+                         belief.model_prior[joint])).mean())[1]
 
 
 class JointDependencyBelief(object):
@@ -83,43 +119,43 @@ class JointDependencyBelief(object):
         return samples
 
     def get_best_explore_action(self, locking):
-        key = lambda pos: np.sum([exp_cross_entropy(self.experiences[joint],
-                                                    pos,
-                                                    self.p_same,
-                                                    self.alpha_prior,
-                                                    self.model_prior[joint])
-                                  for joint in range(self.pos.shape[0])])
+        n = np.where(-np.array(locking))[0].shape[0]
+        # print("n = {}".format(n))
+        samples = self._sample_unlocked(n*90, locking)
 
-        return self._optimize(key, locking)
+        values = global_pool.map(_get_best_explore_action,
+                                 zip([self]*len(samples), samples))
 
-        # samples = self.sample_joint_states(n_samples, locking)
-        # return rand_max(samples,
-        #
+        kv = zip(samples, values)
+
+        return rand_max_kv(kv)
 
     def get_best_unlock_action(self, joint, locking):
-        key = lambda pos: ((prob_locked(self.experiences[joint],
-                                        pos,
-                                        self.p_same,
-                                        self.alpha_prior,
-                                        self.model_prior[joint])).mean())[0]
+        n = np.where(-np.array(locking))[0].shape[0]
+        # print("n = {}".format(n))
+        samples = self._sample_unlocked(n*90, locking)
 
-        return self._optimize(key, locking)
+        values = global_pool.map(_get_best_unlock_action,
+                                 zip([self]*len(samples),
+                                     [joint]*len(samples),
+                                     samples))
 
-        # samples = self.sample_joint_states(n_samples, locking)
-        # return rand_max(samples,
-        #                 key=lambda pos: ((prob_locked(self.experiences[joint],
-        #                                             pos,
-        #                                             self.p_same,
-        #                                             self.alpha_prior,
-        #                                             self.model_prior[joint])).mean())[1])
+        kv = zip(samples, values)
+
+        return rand_max_kv(kv)
 
     def get_best_lock_action(self, joint, locking):
-        key = lambda pos: ((prob_locked(self.experiences[joint],
-                                        pos,
-                                        self.p_same,
-                                        self.alpha_prior,
-                                        self.model_prior[joint])).mean())[1]
-        return self._optimize(key, locking)
+        n = np.where(-np.array(locking))[0].shape[0]
+        # print("n = {}".format(n))
+        samples = self._sample_unlocked(n*90, locking)
+
+        values = global_pool.map(_get_best_lock_action,
+                                 zip([self]*len(samples),
+                                     [joint]*len(samples),
+                                     samples))
+
+        kv = zip(samples, values)
+        return rand_max_kv(kv)
 
     def _sample_unlocked(self, n, locking):
         samples = []
@@ -149,8 +185,5 @@ class JointDependencyBelief(object):
 
         return samples
 
-    def _optimize(self, key, locking, verbose=0):
-        n = np.where(-np.array(locking))[0].shape[0]
-        #print("n = {}".format(n))
-        samples = self._sample_unlocked(n*90, locking)
-        return rand_max(samples, key=key)
+
+global_pool = Pool(processes=4)

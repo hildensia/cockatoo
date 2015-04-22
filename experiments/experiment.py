@@ -55,6 +55,12 @@ def argparsing():
                         help='Use intrinsic motivation')
     parser.add_argument('--goal_reward', '-g', action='store_true',
                         help='Give reward on the goal state.')
+    parser.add_argument('--processes', '-p', type=int,
+                        help='Number of processes to be started.',
+                        default=None)
+    parser.add_argument('--mcts_n', '-m', type=int,
+                        help='Number of nodes MCTS should expand',
+                        default=500)
     args = parser.parse_args()
     print("Intrinsic Motivation: {}".format("On" if args.intrinsic_motivation
                                             else "Off"))
@@ -189,9 +195,9 @@ def main():
 
     state_node = root
     for _ in range(1):
-        pool = multiprocessing.Pool(processes=4)
+        pool = multiprocessing.Pool(processes=options.processes)
         JointDependencyBelief.pool = pool
-        action = search(state_node, n=50)
+        action = search(state_node, n=options.mcts_n)
         state_node = state_node.children[action].sample_state(real_world=True)
         p_cp = update_p_cp(state_node.state.simulator.world, False, pool=pool)
         # plt.plot(p_cp[0])

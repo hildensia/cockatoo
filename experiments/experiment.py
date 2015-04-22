@@ -152,21 +152,13 @@ def main():
 
     print(experiences)
 
-    pool = multiprocessing.Pool(processes=4)
-    JointDependencyBelief.pool = pool
-
-    belief = JointDependencyBelief([0] * n, experiences)
-    print("Pos: {}".format(belief.pos))
-
-    belief.alpha_prior = np.array([.1, .1])
+    JointDependencyBelief.alpha_prior = np.array([.1, .1])
 
     p_cp = np.array([.3] * 360)
     #p_cp[160] = .9
-
-    belief.p_same = [same_segment(p_cp)] * n
+    JointDependencyBelief.p_same = [same_segment(p_cp)] * n
 
     independent_prior = .6
-
     # the model prior is proportional to 1/distance between the joints
     model_prior = np.array([[0 if x == y
                              else independent_prior if x == n
@@ -179,8 +171,12 @@ def main():
                             np.sum(model_prior[:, :-1], 1)).T *
                            (1-independent_prior))
     print(model_prior)
-    belief.model_prior = model_prior
+    JointDependencyBelief.model_prior = model_prior
+
     noise = {'q': 10e-6, 'vel': 10e-6}
+
+    belief = JointDependencyBelief([0] * n, experiences)
+    print("Pos: {}".format(belief.pos))
     state = JointDependencyState(belief, [False, True, True, True, True],
                                  Simulator(noise), options)
 
@@ -193,21 +189,24 @@ def main():
 
     state_node = root
     for _ in range(1):
-        action = search(state_node, n=500)
+        pool = multiprocessing.Pool(processes=4)
+        JointDependencyBelief.pool = pool
+        action = search(state_node, n=50)
         state_node = state_node.children[action].sample_state(real_world=True)
         p_cp = update_p_cp(state_node.state.simulator.world, False, pool=pool)
         # plt.plot(p_cp[0])
         # plt.show()
 
-        # TODO: copy to all states
-        state_node.state.belief.p_same = compute_p_same(p_cp)
-
+        JointDependencyBelief.p_same = compute_p_same(p_cp)
         state_node.parent = None
+
         print(p_cp)
         print(action)
         print(state_node.state.belief.pos)
         print(state_node.state.belief.posteriors)
         print(state_node.state.locking)
+        JointDependencyBelief.pool.close()
+        JointDependencyBelief.pool.join()
 
 
 if __name__ == '__main__':

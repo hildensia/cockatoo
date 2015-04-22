@@ -1,7 +1,7 @@
 from joint_dependency.inference import (model_posterior, prob_locked,
                                         exp_cross_entropy)
 import numpy as np
-from .utils import rand_max, rand_max_kv
+from .utils import rand_max_kv
 
 
 def ass_bool(obj):
@@ -12,9 +12,9 @@ def _get_best_explore_action(tup):
     (belief, pos) = tup
     return np.sum([exp_cross_entropy(belief.experiences[joint],
                                      pos,
-                                     belief.p_same,
-                                     belief.alpha_prior,
-                                     belief.model_prior[joint],
+                                     JointDependencyBelief.p_same,
+                                     JointDependencyBelief.alpha_prior,
+                                     JointDependencyBelief.model_prior[joint],
                                      model_post=belief.posteriors[joint])
                    for joint in range(belief.pos.shape[0])])
 
@@ -23,31 +23,29 @@ def _get_best_lock_action(tup):
     (belief, joint, pos) = tup
     return ((prob_locked(belief.experiences[joint],
                          pos,
-                         belief.p_same,
-                         belief.alpha_prior,
-                         belief.model_prior[joint])).mean())[0]
+                         JointDependencyBelief.p_same,
+                         JointDependencyBelief.alpha_prior,
+                         JointDependencyBelief.model_prior[joint])).mean())[0]
 
 
 def _get_best_unlock_action(tup):
     (belief, joint, pos) = tup
     return ((prob_locked(belief.experiences[joint],
                          pos,
-                         belief.p_same,
-                         belief.alpha_prior,
-                         belief.model_prior[joint])).mean())[1]
+                         JointDependencyBelief.p_same,
+                         JointDependencyBelief.alpha_prior,
+                         JointDependencyBelief.model_prior[joint])).mean())[1]
 
 
 class JointDependencyBelief(object):
     pool = None
-    def __init__(self, pos, experiences, belief=None):
+    alpha_prior = None
+    model_prior = None
+    p_same = None
+
+    def __init__(self, pos, experiences):
         self.experiences = experiences
         self.pos = np.asarray(pos)
-
-        if belief is not None:
-            self.p_same = belief.p_same
-            self.alpha_prior = belief.alpha_prior
-            self.model_prior = belief.model_prior
-
         self._posteriors = None
 
     @property
@@ -56,9 +54,10 @@ class JointDependencyBelief(object):
             return self._posteriors
         posteriors = []
         for i, _ in enumerate(self.pos):
-            posteriors.append(model_posterior(self.experiences[i], self.p_same,
-                                              self.alpha_prior,
-                                              self.model_prior[i]))
+            posteriors.append(model_posterior(self.experiences[i],
+                                              JointDependencyBelief.p_same,
+                                              JointDependencyBelief.alpha_prior,
+                                              JointDependencyBelief.model_prior[i]))
         self._posteriors = posteriors
         return posteriors
 
@@ -66,7 +65,8 @@ class JointDependencyBelief(object):
         pos = np.asarray(pos)
         locking = np.ndarray(pos.shape, dtype=np.bool)
         for joint_idx, joint_exps in enumerate(self.experiences):
-            pl = prob_locked(joint_exps, pos, self.p_same, self.alpha_prior,
+            pl = prob_locked(joint_exps, pos, JointDependencyBelief.p_same,
+                             JointDependencyBelief.alpha_prior,
                              None, self.posteriors[joint_idx])
             # pl is a dirichlet distribution object. Draw a sample and sample
             # from that
@@ -77,7 +77,9 @@ class JointDependencyBelief(object):
         pos = np.asarray(pos)
         pl = []
         for joint_idx, joint_exps in enumerate(self.experiences):
-            pl.append(prob_locked(joint_exps, pos, self.p_same, self.alpha_prior,
+            pl.append(prob_locked(joint_exps, pos,
+                                  JointDependencyBelief.p_same,
+                                  JointDependencyBelief.alpha_prior,
                                   None, self.posteriors[joint_idx]))
         return pl
 
@@ -116,9 +118,8 @@ class JointDependencyBelief(object):
         # print("n = {}".format(n))
         samples = self._sample_unlocked(n*90, locking)
 
-        values = JointDependencyBelief.pool.map(_get_best_explore_action,
-                                                zip([self]*len(samples),
-                                                    samples))
+        data = zip([self]*len(samples), samples)
+        values = JointDependencyBelief.pool.map(_get_best_explore_action, data)
 
         kv = zip(samples, values)
 
@@ -129,10 +130,8 @@ class JointDependencyBelief(object):
         # print("n = {}".format(n))
         samples = self._sample_unlocked(n*90, locking)
 
-        values = JointDependencyBelief.pool.map(_get_best_unlock_action,
-                                                zip([self]*len(samples),
-                                                    [joint]*len(samples),
-                                                    samples))
+        data = zip([self]*len(samples), [joint]*len(samples), samples)
+        values = JointDependencyBelief.pool.map(_get_best_unlock_action, data)
 
         kv = zip(samples, values)
 
@@ -142,11 +141,8 @@ class JointDependencyBelief(object):
         n = np.where(-np.array(locking))[0].shape[0]
         # print("n = {}".format(n))
         samples = self._sample_unlocked(n*90, locking)
-
-        values = JointDependencyBelief.pool.map(_get_best_lock_action,
-                                                zip([self]*len(samples),
-                                                    [joint]*len(samples),
-                                                    samples))
+        data = zip([self]*len(samples), [joint]*len(samples), samples)
+        values = JointDependencyBelief.pool.map(_get_best_lock_action, data)
 
         kv = zip(samples, values)
         return rand_max_kv(kv)
@@ -167,7 +163,7 @@ class JointDependencyBelief(object):
             j = np.random.choice(np.where(-np.array(locking))[0])
             pos[j] = np.random.randint(0, 180)
 
-            p_same = np.prod([self.p_same[k][self.pos[k]][pos[k]]
+            p_same = np.prod([JointDependencyBelief.p_same[k][self.pos[k]][pos[k]]
                               for k in range(pos.shape[0])])
 
             if np.random.uniform() > p_same:

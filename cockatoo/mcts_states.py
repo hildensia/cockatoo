@@ -57,7 +57,7 @@ class JointDependencyState(object):
         for idx, l in enumerate(locking):
             experiences[idx].append({"data": new_pos, "value": 1 if l else 0})
 
-        belief = JointDependencyBelief(new_pos, experiences, self.belief)
+        belief = JointDependencyBelief(new_pos, experiences)
         return JointDependencyState(belief, locking, self.simulator,
                                     self.options)
 
@@ -78,7 +78,7 @@ class JointDependencyState(object):
             exp = {"data": q, "value": 1 if joint.locked else 0}
             experiences[idx].append(exp)
 
-        belief = JointDependencyBelief(q, experiences, self.belief)
+        belief = JointDependencyBelief(q, experiences)
         return JointDependencyState(belief, locking, self.simulator,
                                     self.options)
 

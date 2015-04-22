@@ -33,6 +33,9 @@ class JointDependencyAction(object):
     def __str__(self):
         return self.type.name + " joint " + str(self.joint_idx)
 
+    def __repr__(self):
+        return self.__str__()
+
 
 class JointDependencyState(object):
     def __init__(self, belief, locking, simulator, options):
@@ -48,7 +51,7 @@ class JointDependencyState(object):
         self.simulator = simulator
 
     def perform(self, action):
-        sim_action = self._get_best_action(action)
+        sim_action = self.get_best_low_level_action(action)
         action.move_to = deepcopy(sim_action)
         locking, new_pos = self.belief.simulate(sim_action, action.joint_idx,
                                                 self.locking)
@@ -65,11 +68,9 @@ class JointDependencyState(object):
         experiences = deepcopy(self.belief.experiences)
         print(experiences)
 
-        print("LOCKING: {}".format(self.locking))
-        print("ACTION: {} joint {} ({})".format(action.type.name,
-                                                action.joint_idx,
-                                                self._get_best_action(action)))
-        self.simulator.action_machine.run_action(self.performed[action])
+        self.simulator.action_machine.run_action(
+            self.get_best_low_level_action(action)
+        )
 
         q = [joint.get_q() for joint in self.simulator.world.joints]
         locking = [j.locked
@@ -82,7 +83,7 @@ class JointDependencyState(object):
         return JointDependencyState(belief, locking, self.simulator,
                                     self.options)
 
-    def _get_best_action(self, action):
+    def get_best_low_level_action(self, action):
         try:
             return self.performed[action]
         except KeyError:
@@ -91,12 +92,14 @@ class JointDependencyState(object):
                     deepcopy(self.belief.get_best_explore_action(self.locking))
             elif action.type == JointDependencyActionType.unlock:
                 self.performed[action] = \
-                    deepcopy(self.belief.get_best_unlock_action(action.joint_idx,
-                                                                self.locking))
+                    deepcopy(self.belief.get_best_unlock_action(
+                        action.joint_idx, self.locking)
+                    )
             elif action.type == JointDependencyActionType.lock:
                 self.performed[action] = \
-                    deepcopy(self.belief.get_best_lock_action(action.joint_idx,
-                                                              self.locking))
+                    deepcopy(self.belief.get_best_lock_action(
+                        action.joint_idx, self.locking)
+                    )
             return self.performed[action]
 
     def reward(self, parent, _):

@@ -86,51 +86,59 @@ def compute_p_same(p_cp):
     return p_same
 
 
-def update_p_cp(world, use_ros):
-    P_cp = []
+def process_update_p_cp(tup):
+    (use_ros, records, j) = tup
+    if use_ros:
+        q = records["q_" + str(j)].as_matrix()
+        af = records["applied_force_" + str(j)][0:].as_matrix()
+        v = q[1:] - q[:-1]  # we can't measure the velocity directly
+
+        vn = v[:] + af[1:]
+        d = np.zeros((v.shape[0] + 1,))
+        d[1:] = abs((vn**2 - v[:]**2)/(0.1 * vn))
+    else:
+        v = records["v_" + str(j)].as_matrix()
+        af = records["applied_force_" + str(j)].as_matrix()
+        vn = v + af
+        d = np.zeros(v.shape)
+        d[1:] = (vn[:-1]**2 - v[1:]**2)/(0.1 * vn[:-1])
+
+        saved = 0
+        for i, vel in enumerate(v):
+            if vel == 0:
+                d[i] = saved
+            else:
+                saved = d[i]
+
+        d[0] = d[1]
+
+    nans, x = nan_helper(d)
+    if not all(nans):
+        d[nans] = np.interp(x(nans), x(~nans), d[~nans])
+
+    Q, P, Pcp = bcd.offline_changepoint_detection(
+        data=d,
+        prior_func=partial(bcd.const_prior, l=(len(d)+1)),
+        observation_log_likelihood_function=
+        bcd.gaussian_obs_log_likelihood,
+        truncate=-50)
+
+    p_cp, count = get_probability_over_degree(
+        np.exp(Pcp).sum(0)[:],
+        records['q_' + str(j)][1:].as_matrix())
+
+    return p_cp
+
+def update_p_cp(world, use_ros, pool):
     pid = multiprocessing.current_process().pid
-    for j, joint in enumerate(world.joints):
-        if use_ros:
-            q = Record.records[pid]["q_" + str(j)].as_matrix()
-            af = Record.records[pid]["applied_force_" + str(j)][0:].as_matrix()
-            v = q[1:] - q[:-1]  # we can't measure the velocity directly
+    print("PID: {}".format(pid))
+    print(Record.records.keys())
 
-            vn = v[:] + af[1:]
-            d = np.zeros((v.shape[0] + 1,))
-            d[1:] = abs((vn**2 - v[:]**2)/(0.1 * vn))
-        else:
-            v = Record.records[pid]["v_" + str(j)].as_matrix()
-            af = Record.records[pid]["applied_force_" + str(j)].as_matrix()
-            vn = v + af
-            d = np.zeros(v.shape)
-            d[1:] = (vn[:-1]**2 - v[1:]**2)/(0.1 * vn[:-1])
+    data = zip([use_ros] * len(world.joints),
+               [Record.records[pid]] * len(world.joints),
+               range(len(world.joints)))
 
-            saved = 0
-            for i, vel in enumerate(v):
-                if vel == 0:
-                    d[i] = saved
-                else:
-                    saved = d[i]
-
-            d[0] = d[1]
-
-        nans, x = nan_helper(d)
-        if not all(nans):
-            d[nans] = np.interp(x(nans), x(~nans), d[~nans])
-
-        Q, P, Pcp = bcd.offline_changepoint_detection(
-            data=d,
-            prior_func=partial(bcd.const_prior, l=(len(d)+1)),
-            observation_log_likelihood_function=
-            bcd.gaussian_obs_log_likelihood,
-            truncate=-50)
-
-        p_cp, count = get_probability_over_degree(
-            np.exp(Pcp).sum(0)[:],
-            Record.records[pid]['q_' + str(j)][1:].as_matrix())
-
-        P_cp.append(p_cp)
-    return P_cp
+    return pool.map(process_update_p_cp, data)
 
 
 def main():
@@ -143,6 +151,9 @@ def main():
     experiences[0][0]["value"] = 0
 
     print(experiences)
+
+    pool = multiprocessing.Pool(processes=4)
+    JointDependencyBelief.pool = pool
 
     belief = JointDependencyBelief([0] * n, experiences)
     print("Pos: {}".format(belief.pos))
@@ -184,10 +195,13 @@ def main():
     for _ in range(1):
         action = search(state_node, n=500)
         state_node = state_node.children[action].sample_state(real_world=True)
-        p_cp = update_p_cp(state_node.state.simulator.world, False)
+        p_cp = update_p_cp(state_node.state.simulator.world, False, pool=pool)
         # plt.plot(p_cp[0])
         # plt.show()
+
+        # TODO: copy to all states
         state_node.state.belief.p_same = compute_p_same(p_cp)
+
         state_node.parent = None
         print(p_cp)
         print(action)

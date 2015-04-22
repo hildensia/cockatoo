@@ -2,9 +2,6 @@ from joint_dependency.inference import (model_posterior, prob_locked,
                                         exp_cross_entropy)
 import numpy as np
 from .utils import rand_max, rand_max_kv
-from scipy.optimize import minimize
-
-from multiprocessing import Pool
 
 
 def ass_bool(obj):
@@ -12,8 +9,7 @@ def ass_bool(obj):
 
 
 def _get_best_explore_action(tup):
-    belief = tup[0]
-    pos = tup[1]
+    (belief, pos) = tup
     return np.sum([exp_cross_entropy(belief.experiences[joint],
                                      pos,
                                      belief.p_same,
@@ -24,9 +20,7 @@ def _get_best_explore_action(tup):
 
 
 def _get_best_lock_action(tup):
-    belief = tup[0]
-    joint = tup[1]
-    pos = tup[2]
+    (belief, joint, pos) = tup
     return ((prob_locked(belief.experiences[joint],
                          pos,
                          belief.p_same,
@@ -35,9 +29,7 @@ def _get_best_lock_action(tup):
 
 
 def _get_best_unlock_action(tup):
-    belief = tup[0]
-    joint = tup[1]
-    pos = tup[2]
+    (belief, joint, pos) = tup
     return ((prob_locked(belief.experiences[joint],
                          pos,
                          belief.p_same,
@@ -46,6 +38,7 @@ def _get_best_unlock_action(tup):
 
 
 class JointDependencyBelief(object):
+    pool = None
     def __init__(self, pos, experiences, belief=None):
         self.experiences = experiences
         self.pos = np.asarray(pos)
@@ -123,8 +116,9 @@ class JointDependencyBelief(object):
         # print("n = {}".format(n))
         samples = self._sample_unlocked(n*90, locking)
 
-        values = global_pool.map(_get_best_explore_action,
-                                 zip([self]*len(samples), samples))
+        values = JointDependencyBelief.pool.map(_get_best_explore_action,
+                                                zip([self]*len(samples),
+                                                    samples))
 
         kv = zip(samples, values)
 
@@ -135,10 +129,10 @@ class JointDependencyBelief(object):
         # print("n = {}".format(n))
         samples = self._sample_unlocked(n*90, locking)
 
-        values = global_pool.map(_get_best_unlock_action,
-                                 zip([self]*len(samples),
-                                     [joint]*len(samples),
-                                     samples))
+        values = JointDependencyBelief.pool.map(_get_best_unlock_action,
+                                                zip([self]*len(samples),
+                                                    [joint]*len(samples),
+                                                    samples))
 
         kv = zip(samples, values)
 
@@ -149,10 +143,10 @@ class JointDependencyBelief(object):
         # print("n = {}".format(n))
         samples = self._sample_unlocked(n*90, locking)
 
-        values = global_pool.map(_get_best_lock_action,
-                                 zip([self]*len(samples),
-                                     [joint]*len(samples),
-                                     samples))
+        values = JointDependencyBelief.pool.map(_get_best_lock_action,
+                                                zip([self]*len(samples),
+                                                    [joint]*len(samples),
+                                                    samples))
 
         kv = zip(samples, values)
         return rand_max_kv(kv)
@@ -185,5 +179,3 @@ class JointDependencyBelief(object):
 
         return samples
 
-
-global_pool = Pool(processes=4)

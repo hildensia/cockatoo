@@ -1,3 +1,5 @@
+from __future__ import division
+
 from cockatoo.mcts_states import JointDependencyBelief, JointDependencyState
 from cockatoo.utils import nan_helper
 

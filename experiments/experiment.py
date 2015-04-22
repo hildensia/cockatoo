@@ -51,6 +51,9 @@ class Simulator(object):
 
 def argparsing():
     parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('--action_n', '-n', type=int,
+                        help='Number of processes to be started.',
+                        default=20)
     parser.add_argument('--intrinsic_motivation', '-i', action='store_true',
                         help='Use intrinsic motivation')
     parser.add_argument('--goal_reward', '-g', action='store_true',
@@ -194,7 +197,7 @@ def main():
                             backup=mcts.backups.Bellman(gamma=.6))
 
     state_node = root
-    for _ in range(1):
+    for _ in range(options.action_n):
         pool = multiprocessing.Pool(processes=options.processes)
         JointDependencyBelief.pool = pool
         action = search(state_node, n=options.mcts_n)
@@ -216,5 +219,5 @@ def main():
 
 
 if __name__ == '__main__':
-    cProfile.run("main()")
-    # main()
+    # Profile.run("main()")
+    main()

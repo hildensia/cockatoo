@@ -106,7 +106,6 @@ class JointDependencyState(object):
         reward = -1
 
         if self.options.goal_reward and not self.locking[4]:
-            print("g")
             reward = 100
 
         if self.options.intrinsic_motivation:

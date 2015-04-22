@@ -19,6 +19,21 @@ import argparse
 import multiprocessing
 from functools import partial
 
+import collections
+import datetime
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
+
+ExperimentData = collections.namedtuple(
+    "ExperimentData", "action ll_action pos model_posterior locking_state"
+)
+
+Metadata = collections.namedtuple(
+    "Metadata", "intrinsic_motivation goal_reward mcts_n seed"
+)
 
 class Simulator(object):
     def __init__(self, noise):
@@ -64,7 +79,15 @@ def argparsing():
     parser.add_argument('--mcts_n', '-m', type=int,
                         help='Number of nodes MCTS should expand',
                         default=500)
+    parser.add_argument('--seed', '-s', type=int,
+                        help='Random number generator seed',
+                        default=1)
     args = parser.parse_args()
+
+    np.random.seed(args.seed)
+
+    print("# Actions: {}".format(args.action_n))
+    print("# MCTS nodes: {}".format(args.mcts_n))
     print("Intrinsic Motivation: {}".format("On" if args.intrinsic_motivation
                                             else "Off"))
     print("Goal Reward: {}".format("On" if args.goal_reward
@@ -138,11 +161,9 @@ def process_update_p_cp(tup):
 
     return p_cp
 
+
 def update_p_cp(world, use_ros, pool):
     pid = multiprocessing.current_process().pid
-    print("PID: {}".format(pid))
-    print(Record.records.keys())
-
     data = zip([use_ros] * len(world.joints),
                [Record.records[pid]] * len(world.joints),
                range(len(world.joints)))
@@ -152,6 +173,11 @@ def update_p_cp(world, use_ros, pool):
 
 def main():
     options = argparsing()
+
+    meta = Metadata(intrinsic_motivation=options.intrinsic_motivation,
+                    goal_reward=options.goal_reward,
+                    mcts_n=options.mcts_n,
+                    seed=options.seed)
     n = 5
     experiences = [[]]*n
     print(experiences)
@@ -193,14 +219,20 @@ def main():
 
     root = mcts.graph.StateNode(None, state)
     search = mcts.mcts.MCTS(tree_policy=mcts.tree_policies.UCB1(c=10),
-                            default_policy=mcts.default_policies.immediate_reward,
+                            default_policy=mcts.default_policies.
+                            immediate_reward,
                             backup=mcts.backups.Bellman(gamma=.6))
+
+
+    data = []
 
     state_node = root
     for _ in range(options.action_n):
         pool = multiprocessing.Pool(processes=options.processes)
         JointDependencyBelief.pool = pool
         action = search(state_node, n=options.mcts_n)
+        ll_action = state_node.state.get_best_low_level_action(action)
+
         state_node = state_node.children[action].sample_state(real_world=True)
         p_cp = update_p_cp(state_node.state.simulator.world, False, pool=pool)
         # plt.plot(p_cp[0])
@@ -209,14 +241,26 @@ def main():
         JointDependencyBelief.p_same = compute_p_same(p_cp)
         state_node.parent = None
 
-        print(p_cp)
-        print(action)
-        print(state_node.state.belief.pos)
-        print(state_node.state.belief.posteriors)
-        print(state_node.state.locking)
+        print("Action: {}".format(action))
+        print("Pos: {}".format(state_node.state.belief.pos))
+        print("Model distribution: {}".format(
+            state_node.state.belief.posteriors))
+        print("Locking state: {}".format(state_node.state.locking))
+
+        expd = ExperimentData(
+            action=action,
+            ll_action=ll_action,
+            pos=state_node.state.belief.pos,
+            model_posterior=state_node.state.belief.posteriors,
+            locking_state=state_node.state.locking)
+        data.append(expd)
+
         JointDependencyBelief.pool.close()
         JointDependencyBelief.pool.join()
 
+    with open('cockatoo_{}.pkl'.format(
+            datetime.datetime.now().strftime("%y%m%d%H%M%S")), 'wb') as f:
+        pickle.dump((meta, data), f)
 
 if __name__ == '__main__':
     # Profile.run("main()")

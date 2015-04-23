@@ -1,3 +1,4 @@
+from __future__ import division
 from joint_dependency.inference import (model_posterior, prob_locked,
                                         exp_cross_entropy)
 import numpy as np

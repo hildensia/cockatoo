@@ -191,7 +191,7 @@ def main():
 
     JointDependencyBelief.alpha_prior = np.array([.1, .1])
 
-    p_cp = np.array([.3] * 360)
+    p_cp = np.array([.01] * 360)
     #p_cp[160] = .9
     JointDependencyBelief.p_same = [same_segment(p_cp)] * n
 
@@ -233,7 +233,9 @@ def main():
         pool = multiprocessing.Pool(processes=options.processes)
         JointDependencyBelief.pool = pool
         action = search(state_node, n=options.mcts_n)
+        print("Action: {}".format(action))
         ll_action = state_node.state.get_best_low_level_action(action)
+        print("LL Action: {}".format(ll_action))
 
         state_node = state_node.children[action].sample_state(real_world=True)
         p_cp = update_p_cp(state_node.state.simulator.world, False, pool=pool)
@@ -243,7 +245,6 @@ def main():
         JointDependencyBelief.p_same = compute_p_same(p_cp)
         state_node.parent = None
 
-        print("Action: {}".format(action))
         print("Pos: {}".format(state_node.state.belief.pos))
         print("Model distribution: {}".format(
             state_node.state.belief.posteriors))

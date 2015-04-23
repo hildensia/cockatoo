@@ -148,30 +148,43 @@ class JointDependencyBelief(object):
         return rand_max_kv(kv)
 
     def _sample_unlocked(self, n, locking):
+        joints = np.where(-np.array(locking))[0]
+        samples_each = n/joints.shape[0]
         samples = []
-
-        i = 0
-
-        if all(locking):
-            samples.append(self.pos)
-            return samples
-
-        while i < n:
-            i += 1
-            pos = np.copy(self.pos)
-
-            j = np.random.choice(np.where(-np.array(locking))[0])
-            pos[j] = np.random.randint(0, 180)
-
-            p_same = np.prod([JointDependencyBelief.p_same[k][self.pos[k]][pos[k]]
-                              for k in range(pos.shape[0])])
-
-            if np.random.uniform() > p_same:
+        for joint in joints:
+            for p in np.linspace(0, 180, samples_each):
+                pos = np.copy(self.pos)
+                pos[joint] = p
                 samples.append(pos)
-            elif np.random.uniform() > 0.95:
-                samples.append(pos)
-            else:
-                i -= 1
-
         return samples
+
+        #
+        #
+        #
+        # samples = []
+        #
+        # i = 0
+        #
+        # if all(locking):
+        #     samples.append(self.pos)
+        #     return samples
+        #
+        # while i < n:
+        #     i += 1
+        #     pos = np.copy(self.pos)
+        #
+        #     j = np.random.choice(np.where(-np.array(locking))[0])
+        #     pos[j] = np.random.randint(0, 180)
+        #
+        #     p_same = np.prod([JointDependencyBelief.p_same[k][self.pos[k]][pos[k]]
+        #                       for k in range(pos.shape[0])])
+        #
+        #     if np.random.uniform() > p_same:
+        #         samples.append(pos)
+        #     elif np.random.uniform() > 0.95:
+        #         samples.append(pos)
+        #     else:
+        #         i -= 1
+        #
+        # return samples
 

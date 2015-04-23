@@ -23,6 +23,9 @@ from functools import partial
 
 import collections
 import datetime
+import random
+import logging
+
 try:
     import cPickle as pickle
 except ImportError:
@@ -87,6 +90,7 @@ def argparsing():
     args = parser.parse_args()
 
     np.random.seed(args.seed)
+    random.seed(args.seed)
 
     print("# Actions: {}".format(args.action_n))
     print("# MCTS nodes: {}".format(args.mcts_n))
@@ -97,7 +101,7 @@ def argparsing():
     return args
 
 
-def get_probability_over_degree(P, qs):
+def get_probability_over_degree(P, qs, prior):
     probs = np.zeros((360,))
     count = np.zeros((360,))
     for i, pos in enumerate(qs[:-2]):
@@ -108,7 +112,7 @@ def get_probability_over_degree(P, qs):
         count[deg] += 1
 
     probs = probs/count
-    prior = 10e-8
+    prior = .01
     probs = np.array([prior if np.isnan(p) else p for p in probs])
     return probs, count
 
@@ -121,7 +125,7 @@ def compute_p_same(p_cp):
 
 
 def process_update_p_cp(tup):
-    (use_ros, records, j) = tup
+    (use_ros, records, j, prior) = tup
     if use_ros:
         q = records["q_" + str(j)].as_matrix()
         af = records["applied_force_" + str(j)][0:].as_matrix()
@@ -159,49 +163,29 @@ def process_update_p_cp(tup):
 
     p_cp, count = get_probability_over_degree(
         np.exp(Pcp).sum(0)[:],
-        records['q_' + str(j)][1:].as_matrix())
+        records['q_' + str(j)][1:].as_matrix(),
+        prior
+    )
 
     return p_cp
 
 
-def update_p_cp(world, use_ros, pool):
+def update_p_cp(world, use_ros, prior, pool):
     pid = multiprocessing.current_process().pid
     data = zip([use_ros] * len(world.joints),
                [Record.records[pid]] * len(world.joints),
-               range(len(world.joints)))
+               range(len(world.joints)),
+               prior)
 
     return pool.map(process_update_p_cp, data)
 
 
-def main():
-    np.set_printoptions(precision=3, suppress=True)
-
-    options = argparsing()
-
-    meta = Metadata(intrinsic_motivation=options.intrinsic_motivation,
-                    goal_reward=options.goal_reward,
-                    mcts_n=options.mcts_n,
-                    seed=options.seed)
-    n = 5
-    experiences = [[]]*n
-    print(experiences)
-    for i in range(n):
-        experiences[i] = [{"data": np.array([0]*n), "value": 1}]
-    experiences[0][0]["value"] = 0
-
-    print(experiences)
-
-    JointDependencyBelief.alpha_prior = np.array([.1, .1])
-
-    p_cp = np.array([.01] * 360)
-    #p_cp[160] = .9
-    JointDependencyBelief.p_same = [same_segment(p_cp)] * n
-
+def init_model_prior(n):
     independent_prior = .6
     # the model prior is proportional to 1/distance between the joints
     model_prior = np.array([[0 if x == y
                              else independent_prior if x == n
-                             else 1/abs(x-y)
+    else 1/abs(x-y)
                              for x in range(n+1)]
                             for y in range(n)])
 
@@ -210,48 +194,94 @@ def main():
                             np.sum(model_prior[:, :-1], 1)).T *
                            (1-independent_prior))
     print(model_prior)
-    JointDependencyBelief.model_prior = model_prior
+    return model_prior
 
-    noise = {'q': 10e-6, 'vel': 10e-6}
 
-    belief = JointDependencyBelief([0] * n, experiences)
+def init_experiences(n):
+    experiences = [[]]*n
+    print(experiences)
+    for i in range(n):
+        experiences[i] = [{"data": np.array([0]*n), "value": 1}]
+    experiences[0][0]["value"] = 0
+    return experiences
+
+
+def main():
+    # nicer numpy output
+    np.set_printoptions(precision=3, suppress=True)
+
+    # get command line arguments
+    options = argparsing()
+
+    # save metadata
+    meta = Metadata(intrinsic_motivation=options.intrinsic_motivation,
+                    goal_reward=options.goal_reward,
+                    mcts_n=options.mcts_n,
+                    seed=options.seed)
+    number_of_joints = 5
+
+    # init all experiences with the initial locking state
+    experiences = init_experiences(number_of_joints)
+
+    # setup priors
+    # Changepoint prior
+    p_cp = np.array([.01] * 360)
+    #p_cp[160] = .9
+    JointDependencyBelief.p_same = [same_segment(p_cp)] * number_of_joints
+    JointDependencyBelief.alpha_prior = np.array([.1, .1])
+    JointDependencyBelief.model_prior = init_model_prior(number_of_joints)
+
+    #setup belief of first state
+    belief = JointDependencyBelief(pos=[0] * number_of_joints,
+                                   experiences=experiences)
     print("Pos: {}".format(belief.pos))
+
+    # setup first state and initialize a simulator
+    noise = {'q': 10e-6, 'vel': 10e-6}
     state = JointDependencyState(belief, [False, True, True, True, True],
                                  Simulator(noise), options)
 
-    print(belief.posteriors)
+    print(np.asarray(belief.posteriors))
 
-    root = mcts.graph.StateNode(None, state)
+    # setup MCTS
+    state_node = mcts.graph.StateNode(None, state)
     search = mcts.mcts.MCTS(tree_policy=mcts.tree_policies.UCB1(c=10),
                             default_policy=mcts.default_policies.
                             immediate_reward,
                             backup=mcts.backups.Bellman(gamma=.6))
 
-
+    # setup container for experiment data
     data = []
 
-    state_node = root
     for _ in range(options.action_n):
+        # reset multiprocessing pool
         pool = multiprocessing.Pool(processes=options.processes)
         JointDependencyBelief.pool = pool
+
+        # search for best action
         action = search(state_node, n=options.mcts_n)
         print("Action: {}".format(action))
         ll_action = state_node.state.get_best_low_level_action(action)
         print("LL Action: {}".format(ll_action))
 
+        # perform best action
         state_node = state_node.children[action].sample_state(real_world=True)
-        p_cp = update_p_cp(state_node.state.simulator.world, False, pool=pool)
-        # plt.plot(p_cp[0])
-        # plt.show()
 
+        # update change point probabilities from force sensor data
+        p_cp = update_p_cp(state_node.state.simulator.world, False, prior=p_cp,
+                           pool=pool)
         JointDependencyBelief.p_same = compute_p_same(p_cp)
+
+        # set best state as new root node
         state_node.parent = None
 
+        # print some interesting data
         print("Pos: {}".format(state_node.state.belief.pos))
         print("Model distribution: {}".format(
             np.asarray(state_node.state.belief.posteriors)))
         print("Locking state: {}".format(state_node.state.locking))
 
+        # pack data for later saving
         expd = ExperimentData(
             action=action,
             ll_action=ll_action,
@@ -260,9 +290,11 @@ def main():
             locking_state=state_node.state.locking)
         data.append(expd)
 
+        # shutdown workers from pool
         JointDependencyBelief.pool.close()
         JointDependencyBelief.pool.join()
 
+    # save data
     with open('cockatoo_{}.pkl'.format(
             datetime.datetime.now().strftime("%y%m%d%H%M%S")), 'wb') as f:
         pickle.dump((meta, data), f)

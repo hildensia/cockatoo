@@ -149,9 +149,16 @@ class JointDependencyBelief(object):
         return rand_max_kv(kv)
 
     def _sample_unlocked(self, n, locking):
+        samples = []
+
+        # this is important as during MCTS everything might be locked with
+        # a certain probability, independent of the real model
+        if all(locking):
+            samples.append(self.pos)
+            return samples
+
         joints = np.where(-np.array(locking))[0]
         samples_each = n/joints.shape[0]
-        samples = []
         for joint in joints:
             for p in np.linspace(0, 180, samples_each):
                 pos = np.copy(self.pos)
@@ -166,9 +173,6 @@ class JointDependencyBelief(object):
         #
         # i = 0
         #
-        # if all(locking):
-        #     samples.append(self.pos)
-        #     return samples
         #
         # while i < n:
         #     i += 1

@@ -174,6 +174,8 @@ def update_p_cp(world, use_ros, pool):
 
 
 def main():
+    np.set_printoptions(precision=3, suppress=True)
+
     options = argparsing()
 
     meta = Metadata(intrinsic_motivation=options.intrinsic_motivation,
@@ -247,7 +249,7 @@ def main():
 
         print("Pos: {}".format(state_node.state.belief.pos))
         print("Model distribution: {}".format(
-            state_node.state.belief.posteriors))
+            np.asarray(state_node.state.belief.posteriors)))
         print("Locking state: {}".format(state_node.state.locking))
 
         expd = ExperimentData(

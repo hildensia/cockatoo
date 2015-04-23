@@ -26,7 +26,7 @@ def _get_best_lock_action(tup):
                          pos,
                          JointDependencyBelief.p_same,
                          JointDependencyBelief.alpha_prior,
-                         JointDependencyBelief.model_prior[joint])).mean())[0]
+                         JointDependencyBelief.model_prior[joint])).mean())[1]
 
 
 def _get_best_unlock_action(tup):
@@ -35,7 +35,7 @@ def _get_best_unlock_action(tup):
                          pos,
                          JointDependencyBelief.p_same,
                          JointDependencyBelief.alpha_prior,
-                         JointDependencyBelief.model_prior[joint])).mean())[1]
+                         JointDependencyBelief.model_prior[joint])).mean())[0]
 
 
 class JointDependencyBelief(object):
@@ -117,7 +117,7 @@ class JointDependencyBelief(object):
     def get_best_explore_action(self, locking):
         n = np.where(-np.array(locking))[0].shape[0]
         # print("n = {}".format(n))
-        samples = self._sample_unlocked(n*90, locking)
+        samples = self._sample_unlocked(n*91, locking)
 
         data = zip([self]*len(samples), samples)
         values = JointDependencyBelief.pool.map(_get_best_explore_action, data)
@@ -129,7 +129,7 @@ class JointDependencyBelief(object):
     def get_best_unlock_action(self, joint, locking):
         n = np.where(-np.array(locking))[0].shape[0]
         # print("n = {}".format(n))
-        samples = self._sample_unlocked(n*90, locking)
+        samples = self._sample_unlocked(n*91, locking)
 
         data = zip([self]*len(samples), [joint]*len(samples), samples)
         values = JointDependencyBelief.pool.map(_get_best_unlock_action, data)
@@ -141,7 +141,7 @@ class JointDependencyBelief(object):
     def get_best_lock_action(self, joint, locking):
         n = np.where(-np.array(locking))[0].shape[0]
         # print("n = {}".format(n))
-        samples = self._sample_unlocked(n*90, locking)
+        samples = self._sample_unlocked(n*91, locking)
         data = zip([self]*len(samples), [joint]*len(samples), samples)
         values = JointDependencyBelief.pool.map(_get_best_lock_action, data)
 

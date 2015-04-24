@@ -25,6 +25,7 @@ import collections
 import datetime
 import random
 import logging
+import matplotlib.pyplot as plt
 
 try:
     import cPickle as pickle
@@ -41,7 +42,7 @@ Metadata = collections.namedtuple(
 )
 
 class Simulator(object):
-    def __init__(self, noise):
+    def __init__(self, noise, num_of_joints):
         self.world = World([])
 
         #  master | slave | open | closed
@@ -51,18 +52,29 @@ class Simulator(object):
         #    2    |   3   | 160+ |  160-
         #    3    |   4   | 160+ |  160-
 
-        closed = (0, 160)
         limits = (0, 180)
 
-        states = [closed[0], closed[1]]
-        dampings = [15, 200, 15]
-        for _ in range(5):
-            self.world.add_joint(Joint(states, dampings, limits=limits,
-                                       noise=noise))
+        for i in range(num_of_joints):
 
-        for i in range(1, 5):
-            MultiLocker(self.world, locker=self.world.joints[i-1],
-                        locked=self.world.joints[i], locks=[closed])
+            dampings = [15, 200, 15]
+
+            m = random.randint(10, 170)
+            if i > 0:
+                locks = [lower, upper]
+
+            lower = (0, m - 10)
+            upper = (m + 10, 180)
+
+            self.world.add_joint(Joint([lower[1], upper[0]], dampings,
+                                       limits=limits, noise=noise))
+            if i > 0:
+                MultiLocker(self.world, locker=self.world.joints[i-1],
+                            locked=self.world.joints[i], locks=locks)
+
+            print("Joint {} opens at {} - {}".format(i, lower[1], upper[0]))
+        # for i in range(2, 5):
+        #     MultiLocker(self.world, locker=self.world.joints[i-1],
+        #                 locked=self.world.joints[i], locks=[closed])
 
         controllers = [Controller(self.world, j)
                        for j, _ in enumerate(self.world.joints)]
@@ -239,7 +251,7 @@ def main():
     # setup first state and initialize a simulator
     noise = {'q': 10e-6, 'vel': 10e-6}
     state = JointDependencyState(belief, [False, True, True, True, True],
-                                 Simulator(noise), options)
+                                 Simulator(noise, number_of_joints), options)
 
     print(np.asarray(belief.posteriors))
 
@@ -271,6 +283,10 @@ def main():
         p_cp = update_p_cp(state_node.state.simulator.world, False, prior=p_cp,
                            pool=pool)
         JointDependencyBelief.p_same = compute_p_same(p_cp)
+
+        for pcp in p_cp:
+            plt.plot(pcp)
+        plt.show()
 
         # set best state as new root node
         state_node.parent = None

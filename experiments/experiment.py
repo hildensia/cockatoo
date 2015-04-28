@@ -25,7 +25,8 @@ import collections
 import datetime
 import random
 import logging
-import matplotlib.pyplot as plt
+
+import os
 
 try:
     import cPickle as pickle
@@ -34,7 +35,8 @@ except ImportError:
 
 
 ExperimentData = collections.namedtuple(
-    "ExperimentData", "action ll_action pos model_posterior locking_state"
+    "ExperimentData", "action ll_action pos model_posterior locking_state "
+                      "p_same"
 )
 
 Metadata = collections.namedtuple(
@@ -99,6 +101,9 @@ def argparsing():
     parser.add_argument('--seed', '-s', type=int,
                         help='Random number generator seed',
                         default=1)
+    parser.add_argument('--output_directory', '-o', type=str,
+                        help='Where to save the data files.',
+                        default=os.getcwd())
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -133,7 +138,7 @@ def compute_p_same(p_cp):
     p_same = []
     for pcp in p_cp:
         p_same.append(same_segment(pcp))
-    return p_same
+    return np.array(p_same)
 
 
 def process_update_p_cp(tup):
@@ -197,7 +202,7 @@ def init_model_prior(n):
     # the model prior is proportional to 1/distance between the joints
     model_prior = np.array([[0 if x == y
                              else independent_prior if x == n
-    else 1/abs(x-y)
+                             else 1/abs(x-y)
                              for x in range(n+1)]
                             for y in range(n)])
 
@@ -239,7 +244,8 @@ def main():
     # Changepoint prior
     p_cp = np.array([.01] * 360)
     #p_cp[160] = .9
-    JointDependencyBelief.p_same = [same_segment(p_cp)] * number_of_joints
+    JointDependencyBelief.p_same = np.array([same_segment(p_cp)] *
+                                            number_of_joints)
     JointDependencyBelief.alpha_prior = np.array([.1, .1])
     JointDependencyBelief.model_prior = init_model_prior(number_of_joints)
 
@@ -264,6 +270,8 @@ def main():
 
     # setup container for experiment data
     data = []
+    filename = os.path.join(options.output_directory, 'cockatoo_{}.pkl'.format(
+        datetime.datetime.now().strftime("%y%m%d%H%M%S")))
 
     for _ in range(options.action_n):
         # reset multiprocessing pool
@@ -284,9 +292,9 @@ def main():
                            pool=pool)
         JointDependencyBelief.p_same = compute_p_same(p_cp)
 
-        for pcp in p_cp:
-            plt.plot(pcp)
-        plt.show()
+        # for pcp in p_cp:
+        #     plt.plot(pcp)
+        # plt.show()
 
         # set best state as new root node
         state_node.parent = None
@@ -303,18 +311,18 @@ def main():
             ll_action=ll_action,
             pos=state_node.state.belief.pos,
             model_posterior=state_node.state.belief.posteriors,
-            locking_state=state_node.state.locking)
+            locking_state=state_node.state.locking,
+            p_same=np.array(JointDependencyBelief.p_same))
         data.append(expd)
 
         # shutdown workers from pool
         JointDependencyBelief.pool.close()
         JointDependencyBelief.pool.join()
 
-    # save data
-    with open('cockatoo_{}.pkl'.format(
-            datetime.datetime.now().strftime("%y%m%d%H%M%S")), 'wb') as f:
-        pickle.dump((meta, data), f)
+        # save data
+        with open(filename, 'wb') as f:
+            pickle.dump((meta, data), f)
 
 if __name__ == '__main__':
-    # Profile.run("main()")
-    main()
+    cProfile.run("main()")
+    # main()

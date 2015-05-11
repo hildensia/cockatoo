@@ -392,12 +392,12 @@ def main():
                                     pool=pool)
         JointDependencyBelief.p_same = compute_p_same(p_cp)
 
-        for i, pcp in enumerate(p_cp):
-            plt.plot(pcp, label="{}".format(i))
-        plt.legend()
-        plt.grid()
-        plt.xticks(np.linspace(0,100,51))
-        plt.show()
+        # for i, pcp in enumerate(p_cp):
+        #     plt.plot(pcp, label="{}".format(i))
+        # plt.legend()
+        # plt.grid()
+        # plt.xticks(np.linspace(0,100,51))
+        # plt.show()
 
         # set best state as new root node
         state_node.parent = None

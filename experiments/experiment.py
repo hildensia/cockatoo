@@ -16,7 +16,6 @@ import mcts.backups
 import mcts.tree_policies
 import mcts.default_policies
 
-import cProfile
 import argparse
 import multiprocessing
 from functools import partial
@@ -24,8 +23,6 @@ from functools import partial
 import collections
 import datetime
 import random
-import logging
-import matplotlib.pyplot as plt
 
 import os
 

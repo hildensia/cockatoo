@@ -275,7 +275,7 @@ def process_update_p_cp(tup):
     pcpd = process_cp(damping_deg)
     pcpd[counts[1:] == 0] = np.maximum(.01, pcpd[counts[1:] == 0])
 
-    pcpd = scipy.ndimage.filters.gaussian_filter1d(pcpd, 1)*2
+    #pcpd = scipy.ndimage.filters.gaussian_filter1d(pcpd, 1)
 
     return pcpd
 

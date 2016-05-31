@@ -1,5 +1,9 @@
 from __future__ import division
 
+# bcd must be imported before any module that might use cython, otherwise
+# they conflict with each other
+import bayesian_changepoint_detection.offline_changepoint_detection as bcd
+
 from cockatoo.mcts_states import JointDependencyBelief, JointDependencyState
 from cockatoo.utils import nan_helper
 
@@ -8,7 +12,6 @@ from joint_dependency.simulation import (Joint, MultiLocker, Controller,
                                          ActionMachine, World)
 from joint_dependency.recorder import Record
 
-import bayesian_changepoint_detection.offline_changepoint_detection as bcd
 import numpy as np
 import mcts.graph
 import mcts.mcts
@@ -19,6 +22,8 @@ import mcts.default_policies
 import argparse
 import multiprocessing
 from functools import partial
+
+import matplotlib.pyplot as plt
 
 import collections
 import datetime
@@ -315,6 +320,129 @@ def init_experiences(n):
     return experiences
 
 
+def experiment(options):
+    # nicer numpy output
+    np.set_printoptions(precision=3, suppress=True)
+
+    # save metadata
+    meta = Metadata(intrinsic_motivation=options.intrinsic_motivation,
+                    goal_reward=options.goal_reward,
+                    mcts_n=options.mcts_n,
+                    seed=options.seed)
+    number_of_joints = 5
+
+    # init all experiences with the initial locking state
+    experiences = init_experiences(number_of_joints)
+
+    # setup priors
+    # Changepoint prior
+    p_cp = np.array([.01] * 360)
+    #p_cp[160] = .9
+    JointDependencyBelief.p_same = np.array([same_segment(p_cp)] *
+                                            number_of_joints)
+    JointDependencyBelief.alpha_prior = np.array([.1, .1])
+    JointDependencyBelief.model_prior = init_model_prior(number_of_joints)
+
+    #setup belief of first state
+    belief = JointDependencyBelief(pos=[0] * number_of_joints,
+                                   experiences=experiences)
+    print("Pos: {}".format(belief.pos))
+
+    # setup first state and initialize a simulator
+    noise = {'q': 10e-6, 'vel': 10e-6}
+    state = JointDependencyState(belief, [False, True, True, True, True],
+                                 Simulator(noise, number_of_joints), options)
+
+    print(np.asarray(belief.posteriors))
+
+    # setup MCTS
+    state_node = mcts.graph.StateNode(None, state)
+    search = mcts.mcts.MCTS(tree_policy=mcts.tree_policies.UCB1(c=10),
+                            default_policy=mcts.default_policies.
+                            immediate_reward,
+                            backup=mcts.backups.Bellman(gamma=.6))
+
+    # setup container for experiment data
+    data = []
+
+    if options.save_to_file:
+        filename = os.path.join(
+            options.output_directory,
+            'cockatoo_{}_{}.pkl'.format(
+                datetime.datetime.now().strftime("%y%m%d%H%M%S"),
+                options.seed))
+
+        print("Save to {}".format(filename))
+
+    precomputed_actions = [(0, 180), (0, 40), (1, 180), (1, 2), (1, 136), (1, 144), (2, 180)]
+
+    for _ in range(options.action_n):
+        # reset multiprocessing pool
+        pool = multiprocessing.Pool(processes=options.processes)
+        JointDependencyBelief.pool = pool
+
+        # search for best action
+        action = search(state_node, n=options.mcts_n)
+        print("Action: {}".format(action))
+        ll_action = state_node.state.get_best_low_level_action(action)
+        print("LL Action: {}".format(ll_action))
+
+        # perform best action
+        state_node = state_node.children[action].sample_state(real_world=True)
+
+        # update change point probabilities from force sensor data
+        p_cp, records = update_p_cp(state_node.state.simulator.world, False,
+                                    pool=pool)
+        print("min cp prob = {}".format(np.min(p_cp)))
+        print("max cp prob = {}".format(np.max(p_cp)))
+        JointDependencyBelief.p_same = compute_p_same(p_cp)
+        print("min p same = {}".format(np.min(JointDependencyBelief.p_same)))
+
+        # for i, pcp in enumerate(p_cp):
+        #     plt.plot(pcp, label="{}".format(i))
+        # plt.legend()
+        # plt.grid()
+        # plt.xticks(np.linspace(0,100,51))
+        # plt.show()
+
+        # set best state as new root node
+        state_node.parent = None
+
+        # print some interesting data
+        print("Pos: {}".format(state_node.state.belief.pos))
+        print("Model distribution: {}".format(
+            np.asarray(state_node.state.belief.posteriors)))
+        print("Locking state: {}".format(state_node.state.locking))
+
+        qs = [records['q_{}'.format(q)] for q in range(number_of_joints)]
+        vs = [records['v_{}'.format(q)] for q in range(number_of_joints)]
+        afs = [records['applied_force_{}'.format(q)] for q in range(number_of_joints)]
+
+        # pack data for later saving
+        expd = ExperimentData(
+            action=action,
+            ll_action=ll_action,
+            pos=state_node.state.belief.pos,
+            model_posterior=state_node.state.belief.posteriors,
+            locking_state=state_node.state.locking,
+            p_cp=np.array(p_cp),
+            qs=qs,
+            vs=vs,
+            afs=afs)
+        data.append(expd)
+
+        # shutdown workers from pool
+        JointDependencyBelief.pool.close()
+        JointDependencyBelief.pool.join()
+
+        # save data
+        if options.save_to_file:
+            with open(filename, 'wb') as f:
+                pickle.dump((meta, data), f)
+
+    return meta, data
+
+
 def main():
     # nicer numpy output
     np.set_printoptions(precision=3, suppress=True)
@@ -370,6 +498,8 @@ def main():
 
     print("Save to {}".format(filename))
 
+    precomputed_actions = [(0, 180), (0, 40), (1, 180), (1, 2), (1, 136), (1, 144), (2, 180)]
+
     for _ in range(options.action_n):
         # reset multiprocessing pool
         pool = multiprocessing.Pool(processes=options.processes)
@@ -387,7 +517,10 @@ def main():
         # update change point probabilities from force sensor data
         p_cp, records = update_p_cp(state_node.state.simulator.world, False,
                                     pool=pool)
+        print("min cp prob = {}".format(np.min(p_cp)))
+        print("max cp prob = {}".format(np.max(p_cp)))
         JointDependencyBelief.p_same = compute_p_same(p_cp)
+        print("min p same = {}".format(np.min(JointDependencyBelief.p_same)))
 
         # for i, pcp in enumerate(p_cp):
         #     plt.plot(pcp, label="{}".format(i))
